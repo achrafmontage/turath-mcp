@@ -1,0 +1,49 @@
+{
+  "name": "turath-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for turath.io: search, books, authors, categories and page text",
+  "type": "module",
+  "bin": {
+    "turath-mcp": "build/index.js"
+  },
+  "main": "build/index.js",
+  "scripts": {
+    "build": "tsc && chmod +x build/index.js",
+    "start": "node build/index.js",
+    "inspect": "npx @modelcontextprotocol/inspector node build/index.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "turath",
+    "islamic",
+    "arabic",
+    "claude"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/USERNAME/turath-mcp.git"
+  },
+  "homepage": "https://github.com/USERNAME/turath-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/USERNAME/turath-mcp/issues"
+  }
+}
