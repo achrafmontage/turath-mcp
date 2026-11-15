@@ -41,10 +41,18 @@ Use the same command: `npx -y github:USERNAME/turath-mcp`
 | `turath_get_author` | Author details |
 | `turath_list_categories` | Book categories |
 | `turath_find_in_catalog` | Find book/author/category IDs by name |
-| `turath_get_book_file` | Static JSON of a whole book (truncated) |
+| `turath_get_category` | One category with its books (paged) |
+| `turath_get_book_file` | Static JSON of a whole book (asks for confirmation via elicitation) |
+| `turath_summarize_page` | Summarize a page with the client model (sampling) |
+| `turath_export_pages` | Save pages as .md inside the client's root folder (roots) |
+| `turath_fetch_pages_task` | Fetch up to 100 pages as a background task (tasks) |
 
-**Resources:** `turath://book/{book_id}`, `turath://book/{book_id}/page/{page}`
-**Prompt:** `research_topic`
+**Resources:** `turath://categories`, `turath://category/{id}`, `turath://book/{id}`, `turath://book/{id}/page/{page}`
+**Prompts:** `research_topic`, `explore_category` (with argument completion)
+
+## MCP capabilities
+Server: tools, resources, prompts, logging, completions, tasks (experimental), experimental (`turath/arabic-normalization`).
+Client features used when available: roots, sampling, elicitation (each tool degrades with a clear message if the client lacks it).
 
 ## Development
 ```bash

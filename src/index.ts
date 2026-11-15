@@ -2,31 +2,24 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { InMemoryTaskStore } from "@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js";
+import { text, fail, run, id, readOnly } from "./util.js";
+import { registerAdvanced, mcpLog } from "./capabilities.js";
 import { turath, getCatalog, getSection, byId, resolveBooks, searchSection, TurathError, log } from "./client.js";
 
-const server = new McpServer({ name: "turath", version: "1.0.0" });
-
-const MAX_CHARS = 30_000;
-const text = (data: unknown) => {
-  let s = typeof data === "string" ? data : JSON.stringify(data, null, 2);
-  if (s.length > MAX_CHARS) s = s.slice(0, MAX_CHARS) + "\n…[truncated]";
-  return { content: [{ type: "text" as const, text: s }] };
-};
-const fail = (e: unknown) => ({
-  isError: true,
-  content: [{ type: "text" as const, text: e instanceof TurathError ? e.message : `Unexpected error: ${(e as Error).message}` }],
-});
-const run = async <T>(fn: () => Promise<T>) => {
-  try {
-    return text(await fn());
-  } catch (e) {
-    log("tool error:", e);
-    return fail(e);
+const server = new McpServer(
+  { name: "turath", version: "1.1.0" },
+  {
+    capabilities: {
+      logging: {},
+      tasks: { list: {}, cancel: {}, requests: { tools: { call: {} } } },
+      experimental: { "turath/arabic-normalization": { version: "1" } },
+    },
+    taskStore: new InMemoryTaskStore(),
+    instructions:
+      "Turath Islamic library. Find ids with turath_find_in_catalog or turath_list_categories, then read with turath_get_page(s). Quote Arabic text exactly and cite book, author and page.",
   }
-};
-
-const id = (what: string) => z.number().int().positive().describe(what);
-const readOnly = { readOnlyHint: true, openWorldHint: true } as const;
+);
 
 server.registerTool(
   "turath_search",
@@ -187,35 +180,6 @@ server.registerTool(
     })
 );
 
-server.registerTool(
-  "turath_get_book_file",
-  {
-    title: "Get static book file",
-    description: "Fetch the static JSON file of a whole book (can be large; output is truncated).",
-    inputSchema: { book_id: id("Book ID") },
-    annotations: readOnly,
-  },
-  ({ book_id }) => run(() => turath.bookFile(book_id))
-);
-
-server.registerResource(
-  "book",
-  new ResourceTemplate("turath://book/{book_id}", { list: undefined }),
-  { title: "Turath book metadata", description: "Metadata and table of contents of a book", mimeType: "application/json" },
-  async (uri, { book_id }) => ({
-    contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(await turath.book(Number(book_id)), null, 2) }],
-  })
-);
-
-server.registerResource(
-  "page",
-  new ResourceTemplate("turath://book/{book_id}/page/{page}", { list: undefined }),
-  { title: "Turath book page", description: "Text of a single book page", mimeType: "application/json" },
-  async (uri, { book_id, page }) => ({
-    contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(await turath.page(Number(book_id), Number(page)), null, 2) }],
-  })
-);
-
 server.registerPrompt(
   "research_topic",
   {
@@ -237,8 +201,10 @@ server.registerPrompt(
 );
 
 async function main() {
+  registerAdvanced(server);
   await server.connect(new StdioServerTransport());
   log("running on stdio");
+  await mcpLog(server, "info", "turath-mcp started");
 }
 main().catch((e) => {
   log("fatal:", e);

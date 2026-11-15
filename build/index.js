@@ -1,31 +1,20 @@
 #!/usr/bin/env node
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { InMemoryTaskStore } from "@modelcontextprotocol/sdk/experimental/tasks/stores/in-memory.js";
+import { run, id, readOnly } from "./util.js";
+import { registerAdvanced, mcpLog } from "./capabilities.js";
 import { turath, getCatalog, getSection, byId, resolveBooks, searchSection, TurathError, log } from "./client.js";
-const server = new McpServer({ name: "turath", version: "1.0.0" });
-const MAX_CHARS = 30_000;
-const text = (data) => {
-    let s = typeof data === "string" ? data : JSON.stringify(data, null, 2);
-    if (s.length > MAX_CHARS)
-        s = s.slice(0, MAX_CHARS) + "\n…[truncated]";
-    return { content: [{ type: "text", text: s }] };
-};
-const fail = (e) => ({
-    isError: true,
-    content: [{ type: "text", text: e instanceof TurathError ? e.message : `Unexpected error: ${e.message}` }],
+const server = new McpServer({ name: "turath", version: "1.1.0" }, {
+    capabilities: {
+        logging: {},
+        tasks: { list: {}, cancel: {}, requests: { tools: { call: {} } } },
+        experimental: { "turath/arabic-normalization": { version: "1" } },
+    },
+    taskStore: new InMemoryTaskStore(),
+    instructions: "Turath Islamic library. Find ids with turath_find_in_catalog or turath_list_categories, then read with turath_get_page(s). Quote Arabic text exactly and cite book, author and page.",
 });
-const run = async (fn) => {
-    try {
-        return text(await fn());
-    }
-    catch (e) {
-        log("tool error:", e);
-        return fail(e);
-    }
-};
-const id = (what) => z.number().int().positive().describe(what);
-const readOnly = { readOnlyHint: true, openWorldHint: true };
 server.registerTool("turath_search", {
     title: "Search Turath",
     description: "Full-text search across the Turath Islamic library. Arabic queries work best.",
@@ -144,18 +133,6 @@ server.registerTool("turath_find_in_catalog", {
         }),
     };
 }));
-server.registerTool("turath_get_book_file", {
-    title: "Get static book file",
-    description: "Fetch the static JSON file of a whole book (can be large; output is truncated).",
-    inputSchema: { book_id: id("Book ID") },
-    annotations: readOnly,
-}, ({ book_id }) => run(() => turath.bookFile(book_id)));
-server.registerResource("book", new ResourceTemplate("turath://book/{book_id}", { list: undefined }), { title: "Turath book metadata", description: "Metadata and table of contents of a book", mimeType: "application/json" }, async (uri, { book_id }) => ({
-    contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(await turath.book(Number(book_id)), null, 2) }],
-}));
-server.registerResource("page", new ResourceTemplate("turath://book/{book_id}/page/{page}", { list: undefined }), { title: "Turath book page", description: "Text of a single book page", mimeType: "application/json" }, async (uri, { book_id, page }) => ({
-    contents: [{ uri: uri.href, mimeType: "application/json", text: JSON.stringify(await turath.page(Number(book_id), Number(page)), null, 2) }],
-}));
 server.registerPrompt("research_topic", {
     title: "Research a topic in Turath",
     description: "Search Turath and summarize findings with book and page citations.",
@@ -172,8 +149,10 @@ server.registerPrompt("research_topic", {
     ],
 }));
 async function main() {
+    registerAdvanced(server);
     await server.connect(new StdioServerTransport());
     log("running on stdio");
+    await mcpLog(server, "info", "turath-mcp started");
 }
 main().catch((e) => {
     log("fatal:", e);
