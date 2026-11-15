@@ -129,12 +129,27 @@ export function registerAdvanced(server: McpServer) {
       run(async () => {
         if (!caps().sampling) throw new TurathError("This client does not support sampling; use turath_get_page instead.");
         const p = await turath.page(book_id, page);
-        const res = await server.server.createMessage({
-          messages: [{ role: "user", content: { type: "text", text: `Summarize this page in ${language ?? "Arabic"}, quoting key phrases exactly:\n\n${JSON.stringify(p).slice(0, 12000)}` } }],
-          systemPrompt: "You are a careful assistant for classical Islamic texts. Do not add claims that are not in the text.",
-          maxTokens: 600,
-        });
-        return res.content.type === "text" ? res.content.text : "(non-text response)";
+        const res = await server.server.createMessage(
+          {
+            messages: [{ role: "user", content: { type: "text", text: `Summarize this page in ${language ?? "Arabic"}, quoting key phrases exactly:\n\n${JSON.stringify(p).slice(0, 12000)}` } }],
+            systemPrompt: "You are a careful assistant for classical Islamic texts. Do not add claims that are not in the text.",
+            maxTokens: 600,
+          },
+          { timeout: 120_000 }
+        );
+        const parts = Array.isArray(res.content) ? res.content : [res.content];
+        const summary = parts
+          .map((x: any) => (x?.type === "text" ? x.text : ""))
+          .join("\n")
+          .trim();
+        if (!summary) {
+          // The client returned an empty answer (e.g. the MCP Inspector has no model; a human must type the reply).
+          return {
+            note: "Sampling returned an empty response, so no summary was generated. In the MCP Inspector, answer the request in the Sampling panel; in Claude Desktop/Claude Code a model answers automatically. Raw page returned instead.",
+            page: p,
+          };
+        }
+        return summary;
       })
   );
 
