@@ -14,7 +14,7 @@ Add to `claude_desktop_config.json`:
   "mcpServers": {
     "turath": {
       "command": "npx",
-      "args": ["-y", "github:USERNAME/turath-mcp"]
+      "args": ["-y", "github:achrafmontage/turath-mcp"]
     }
   }
 }
@@ -22,13 +22,13 @@ Add to `claude_desktop_config.json`:
 
 ### Claude Code
 ```bash
-claude mcp add turath -- npx -y github:USERNAME/turath-mcp
+claude mcp add turath -- npx -y github:achrafmontage/turath-mcp
 ```
 
 ### Cursor / other clients
-Use the same command: `npx -y github:USERNAME/turath-mcp`
+Use the same command: `npx -y github:achrafmontage/turath-mcp`
 
-> Once published to npm, replace `github:USERNAME/turath-mcp` with `turath-mcp`.
+> Once published to npm, replace `github:achrafmontage/turath-mcp` with `turath-mcp`.
 
 ## Tools
 
