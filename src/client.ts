@@ -59,8 +59,6 @@ export const turath = {
       })}`
     ),
 
-  category: (categoryId?: number) => getJson(`${API}/category?${qs({ id: categoryId, ver: VER })}`),
-
   bookFile: (bookId: number) => getJson(`${FILES}/books-v3/${bookId}.json`),
 };
 
@@ -95,4 +93,34 @@ export function searchSection(section: any, query: string, limit: number): { tot
   const needle = normalizeArabic(query.trim());
   const matched = needle ? records.filter((r) => normalizeArabic(JSON.stringify(r)).includes(needle)) : records;
   return { total: matched.length, items: matched.slice(0, limit) };
+}
+
+/** Catalog layout of data-v3.json: { cats: {id:{id,name,books[]}}, authors: {id:{id,name,death,books[]}}, books: {...} } */
+export type CatalogKind = "categories" | "authors" | "books";
+const SECTION: Record<CatalogKind, string> = { categories: "cats", authors: "authors", books: "books" };
+
+export async function getSection(kind: CatalogKind): Promise<any> {
+  const data = await getCatalog();
+  const section = data[SECTION[kind]];
+  if (!section) throw new TurathError(`Catalog section "${SECTION[kind]}" not found in data-v3.json`);
+  return section;
+}
+
+/** Look up one record by id from a catalog section (object keyed by id, or array of records). */
+export function byId(section: any, id: number | string): any | undefined {
+  if (!section) return undefined;
+  if (Array.isArray(section)) return section.find((r) => r && String(r.id) === String(id));
+  return section[String(id)];
+}
+
+/** Turn a catalog book record into a compact, readable entry. */
+export function briefBook(rec: any, id: number | string): any {
+  if (rec === undefined) return { id: Number(id) };
+  if (rec && typeof rec === "object" && !Array.isArray(rec)) return { id: Number(id), ...rec };
+  return { id: Number(id), data: rec };
+}
+
+/** Resolve a list of book ids against the catalog books section, paged. */
+export function resolveBooks(ids: number[], booksSection: any, offset: number, limit: number) {
+  return ids.slice(offset, offset + limit).map((id) => briefBook(byId(booksSection, id), id));
 }

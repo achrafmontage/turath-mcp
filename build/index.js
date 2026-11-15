@@ -2,7 +2,7 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { turath, getCatalog, searchSection, TurathError, log } from "./client.js";
+import { turath, getCatalog, getSection, byId, resolveBooks, searchSection, TurathError, log } from "./client.js";
 const server = new McpServer({ name: "turath", version: "1.0.0" });
 const MAX_CHARS = 30_000;
 const text = (data) => {
@@ -68,26 +68,82 @@ server.registerTool("turath_get_book", {
 }, ({ book_id, include_indexes }) => run(() => turath.book(book_id, include_indexes ?? true)));
 server.registerTool("turath_get_author", {
     title: "Get author details",
-    description: "Biographical details for an author.",
-    inputSchema: { author_id: id("Author ID") },
+    description: "Author details: name, death year and the ids of their books (from the Turath catalog), merged with live details from the author API when available.",
+    inputSchema: {
+        author_id: id("Author ID"),
+        include_books: z.boolean().optional().describe("Resolve the author's books to catalog entries (default false: ids only)"),
+        limit: z.number().int().min(1).max(200).optional().describe("Max books when include_books is true (default 50)"),
+        offset: z.number().int().min(0).optional().describe("Books offset (default 0)"),
+    },
     annotations: readOnly,
-}, ({ author_id }) => run(() => turath.author(author_id)));
+}, ({ author_id, include_books, limit, offset }) => run(async () => {
+    const cat = byId(await getSection("authors"), author_id);
+    const live = await turath.author(author_id).catch((e) => {
+        log("author API failed, using catalog only:", e.message);
+        return undefined;
+    });
+    if (!cat && !live)
+        throw new TurathError(`Author ${author_id} not found`);
+    const bookIds = cat?.books ?? [];
+    const out = { ...(cat ?? { id: author_id }), books: undefined, book_count: bookIds.length, details: live };
+    if (include_books)
+        out.books = resolveBooks(bookIds, (await getCatalog()).books, offset ?? 0, limit ?? 50);
+    else
+        out.book_ids = bookIds;
+    return out;
+}));
 server.registerTool("turath_list_categories", {
     title: "List categories",
-    description: "List book categories from the Turath catalog.",
+    description: "List all Turath book categories (id, name, number of books). Use turath_get_category for one category.",
     inputSchema: {},
     annotations: readOnly,
-}, () => run(async () => (await getCatalog()).categories ?? (await turath.category())));
+}, () => run(async () => {
+    const cats = await getSection("categories");
+    const list = (Array.isArray(cats) ? cats : Object.values(cats));
+    return list.map((c) => ({ id: c.id, name: c.name, book_count: c.books?.length ?? 0 }));
+}));
+server.registerTool("turath_get_category", {
+    title: "Get category by ID",
+    description: "One category with its books. Books are paged; use offset/limit to walk large categories.",
+    inputSchema: {
+        category_id: id("Category ID (see turath_list_categories)"),
+        include_books: z.boolean().optional().describe("Resolve books to catalog entries (default true; false returns ids only)"),
+        limit: z.number().int().min(1).max(200).optional().describe("Max books (default 50)"),
+        offset: z.number().int().min(0).optional().describe("Books offset (default 0)"),
+    },
+    annotations: readOnly,
+}, ({ category_id, include_books, limit, offset }) => run(async () => {
+    const cat = byId(await getSection("categories"), category_id);
+    if (!cat)
+        throw new TurathError(`Category ${category_id} not found. Use turath_list_categories.`);
+    const ids = cat.books ?? [];
+    const lim = limit ?? 50;
+    const off = offset ?? 0;
+    const base = { id: cat.id, name: cat.name, book_count: ids.length, offset: off, limit: lim };
+    if (include_books === false)
+        return { ...base, book_ids: ids.slice(off, off + lim) };
+    return { ...base, books: resolveBooks(ids, (await getCatalog()).books, off, lim) };
+}));
 server.registerTool("turath_find_in_catalog", {
-    title: "Find books or authors by name",
-    description: "Search the Turath catalog index (data-v3.json) by name to look up book or author IDs.",
+    title: "Find books, authors or categories by name",
+    description: "Search the Turath catalog (data-v3.json) by name; Arabic diacritics and letter variants are ignored.",
     inputSchema: {
         kind: z.enum(["books", "authors", "categories"]).describe("Which catalog section to search"),
-        query: z.string().describe("Name text, e.g. a title or author name (empty returns the first entries)"),
+        query: z.string().describe("Name text (empty returns the first entries)"),
         limit: z.number().int().min(1).max(50).optional().describe("Max results (default 20)"),
     },
     annotations: readOnly,
-}, ({ kind, query, limit }) => run(async () => searchSection((await getCatalog())[kind], query, limit ?? 20)));
+}, ({ kind, query, limit }) => run(async () => {
+    const r = searchSection(await getSection(kind), query, limit ?? 20);
+    // Keep results compact: drop long id arrays, report their size instead.
+    return {
+        total: r.total,
+        items: r.items.map((x) => {
+            const { books, ...rest } = x;
+            return Array.isArray(books) ? { ...rest, book_count: books.length } : x;
+        }),
+    };
+}));
 server.registerTool("turath_get_book_file", {
     title: "Get static book file",
     description: "Fetch the static JSON file of a whole book (can be large; output is truncated).",
