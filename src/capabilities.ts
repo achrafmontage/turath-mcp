@@ -9,6 +9,7 @@ import { z } from "zod";
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import os from "node:os";
 import { turath, getSection, getCatalog, byId, normalizeArabic, TurathError, log } from "./client.js";
 import { text, fail, run, id, readOnly } from "./util.js";
 
@@ -164,16 +165,31 @@ export function registerAdvanced(server: McpServer) {
     "turath_export_pages",
     {
       title: "Export pages to a markdown file",
-      description: "Saves a page range as a .md file inside the first root folder shared by the client (folder: turath-exports).",
+      description: "Saves a page range as a .md file in a turath-exports folder: inside the client root if shared, otherwise TURATH_EXPORT_DIR, otherwise the home directory.",
       inputSchema: { book_id: id("Book ID"), from_page: id("First page"), to_page: id("Last page (max 50 pages)") },
     },
     ({ book_id, from_page, to_page }) =>
       run(async () => {
-        if (!caps().roots) throw new TurathError("This client does not expose roots; cannot choose a safe folder.");
-        const { roots } = await server.server.listRoots();
-        const root = roots.find((r) => r.uri.startsWith("file://"));
-        if (!root) throw new TurathError("No file:// root available.");
-        const dir = path.join(fileURLToPath(root.uri), "turath-exports");
+        // 1) a file:// root shared by the client, 2) TURATH_EXPORT_DIR env var, 3) ~/turath-exports
+        let base: string | undefined;
+        let source = "default";
+        if (caps().roots) {
+          try {
+            const { roots } = await server.server.listRoots();
+            const root = roots.find((r) => r.uri.startsWith("file://"));
+            if (root) {
+              base = fileURLToPath(root.uri);
+              source = "client root";
+            }
+          } catch (e) {
+            log("listRoots failed:", (e as Error).message);
+          }
+        }
+        if (!base && process.env.TURATH_EXPORT_DIR) {
+          base = process.env.TURATH_EXPORT_DIR;
+          source = "TURATH_EXPORT_DIR";
+        }
+        const dir = base ? path.join(base, "turath-exports") : path.join(os.homedir(), "turath-exports");
         const end = Math.min(to_page, from_page + 49);
         let md = `# Turath book ${book_id} — pages ${from_page}-${end}\n\n`;
         for (let n = from_page; n <= end; n++) {
@@ -184,7 +200,7 @@ export function registerAdvanced(server: McpServer) {
         const file = path.join(dir, `book-${book_id}-${from_page}-${end}.md`);
         await writeFile(file, md, "utf8");
         await mcpLog(server, "info", `exported ${file}`);
-        return { saved: file, pages: end - from_page + 1 };
+        return { saved: file, pages: end - from_page + 1, folder_source: source };
       })
   );
 
