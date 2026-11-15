@@ -40,10 +40,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/USERNAME/turath-mcp.git"
+    "url": "git+https://github.com/achrafmontage/turath-mcp.git"
   },
-  "homepage": "https://github.com/USERNAME/turath-mcp#readme",
+  "homepage": "https://github.com/achrafmontage/turath-mcp#readme",
   "bugs": {
-    "url": "https://github.com/USERNAME/turath-mcp/issues"
+    "url": "https://github.com/achrafmontage/turath-mcp/issues"
   }
 }
